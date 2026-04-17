@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0a0a">
+<title>Uber Hunt - The Chilean Dream (iPhone)</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: #0a0a0a;
+    font-family: 'Courier New', monospace;
+    color: #fff;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+  #wrap {
+    position: fixed;
+    inset: 0;
+    width: 100%; height: 100%;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  canvas {
+    display: block;
+    width: 100%; height: 100%;
+    background: linear-gradient(180deg, #ff9966 0%, #ff5e62 40%, #2c1810 100%);
+    touch-action: none;
+  }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom) 12px;
+  }
+  .panel {
+    background: rgba(0,0,0,0.88);
+    border: 3px solid #00d26a;
+    padding: 22px 26px;
+    text-align: center;
+    pointer-events: auto;
+    max-width: 560px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 0 30px rgba(0,210,106,0.4);
+    border-radius: 8px;
+  }
+  h1 {
+    color: #00d26a;
+    margin: 0 0 8px 0;
+    font-size: clamp(20px, 5vw, 34px);
+    letter-spacing: 2px;
+  }
+  h2 {
+    color: #ff5e62;
+    margin: 0 0 12px 0;
+    font-size: clamp(14px, 3.5vw, 20px);
+  }
+  p {
+    line-height: 1.5;
+    margin: 6px 0;
+    font-size: clamp(12px, 2.8vw, 16px);
+  }
+  button {
+    background: #00d26a;
+    color: #000;
+    border: none;
+    padding: 14px 28px;
+    font-family: inherit;
+    font-size: clamp(15px, 3.5vw, 18px);
+    font-weight: bold;
+    cursor: pointer;
+    margin-top: 14px;
+    letter-spacing: 1px;
+    border-radius: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    touch-action: manipulation;
+    min-height: 48px;
+    width: 100%;
+    max-width: 320px;
+  }
+  button:active { background: #fff; transform: scale(0.97); }
+  .flag {
+    display: inline-block;
+    width: 36px; height: 24px;
+    vertical-align: middle;
+    background:
+      linear-gradient(to right, #0039a6 40%, transparent 40%),
+      linear-gradient(to bottom, #fff 50%, #d52b1e 50%);
+    position: relative;
+    margin: 0 6px;
+    border: 1px solid #333;
+  }
+  .flag::after {
+    content: '★';
+    position: absolute;
+    top: -3px; left: 7px;
+    color: #fff;
+    font-size: 14px;
+  }
+  .hidden { display: none !important; }
+  .small { font-size: clamp(10px, 2.4vw, 13px); opacity: 0.75; }
+  .quote { font-style: italic; color: #ffd700; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+</div>
+<div id="overlay">
+
+  <div id="startPanel" class="panel">
+    <h1>UBER HUNT <span class="flag"></span></h1>
+    <h2>The Chilean Dream: A Job at Uber</h2>
+    <p>You're <b>Felipe "el Feli"</b>, an unemployed dude from Santiago.</p>
+    <p>Your mission: hunt Uber job offers before some other guy snatches them.</p>
+    <p class="quote">"Easy bro, I just need a little gig, that's all"</p>
+    <p class="small">
+      <b>Tap</b> the flying job to apply.<br>
+      Real jobs = +points. Scams = −points and −life.<br>
+      3 rejections and you're out. 60 seconds on the clock.
+    </p>
+    <button id="startBtn">START APPLYING</button>
+  </div>
+
+  <div id="endPanel" class="panel hidden">
+    <h1 id="endTitle">TIME'S UP</h1>
+    <p id="endMsg"></p>
+    <p>Applications accepted: <b id="finalScore">0</b></p>
+    <p>Best streak: <b id="finalCombo">0</b> in a row</p>
+    <p id="endQuote" class="quote"></p>
+    <button id="restartBtn">TRY AGAIN, MAN</button>
+  </div>
+
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  const startPanel = document.getElementById('startPanel');
+  const endPanel = document.getElementById('endPanel');
+  const startBtn = document.getElementById('startBtn');
+  const restartBtn = document.getElementById('restartBtn');
+
+  let W = 960, H = 600;
+  let DPR = 1;
+
+  function fit() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    canvas.width = Math.floor(cssW * DPR);
+    canvas.height = Math.floor(cssH * DPR);
+    W = cssW;
+    H = cssH;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+
+  // ---- Audio ----
+  let audioCtx = null;
+  function unlockAudio() {
+    if (audioCtx) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return;
+    }
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const buf = audioCtx.createBuffer(1, 1, 22050);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      src.start(0);
+    } catch(e){}
+  }
+  function snd(freq, dur, type='square', vol=0.1) {
+    if (!audioCtx) return;
+    try {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type; o.frequency.value = freq;
+      g.gain.value = vol;
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start();
+      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+      o.stop(audioCtx.currentTime + dur);
+    } catch(e){}
+  }
+  function sndScream() {
+    if (!audioCtx) return;
+    try {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'sawtooth';
+      const t0 = audioCtx.currentTime;
+      o.frequency.setValueAtTime(900, t0);
+      o.frequency.exponentialRampToValueAtTime(120, t0 + 1.2);
+      g.gain.setValueAtTime(0.18, t0);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.4);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(); o.stop(t0 + 1.4);
+    } catch(e){}
+  }
+  function sndSplat() {
+    if (!audioCtx) return;
+    try {
+      const buf = audioCtx.createBuffer(1, audioCtx.sampleRate*0.3, audioCtx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i=0;i<data.length;i++) data[i] = (Math.random()*2-1) * Math.pow(1 - i/data.length, 2);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      const g = audioCtx.createGain();
+      g.gain.value = 0.4;
+      src.connect(g); g.connect(audioCtx.destination);
+      src.start();
+    } catch(e){}
+  }
+  const sndShoot = () => snd(880, 0.05, 'square', 0.08);
+  const sndHit   = () => { snd(660, 0.08); setTimeout(()=>snd(990,0.1),50); };
+  const sndMiss  = () => snd(110, 0.18, 'sawtooth', 0.12);
+  const sndBad   = () => { snd(180,0.15,'sawtooth',0.12); setTimeout(()=>snd(90,0.2,'sawtooth',0.12),80); };
+
+  const STATE = { MENU:0, PLAY:1, DYING:2, END:3 };
+  let state = STATE.MENU;
+  let score = 0;
+  let lives = 3;
+  let timeLeft = 60;
+  let combo = 0;
+  let bestCombo = 0;
+  let entities = [];
+  let particles = [];
+  let popups = [];
+  let lastSpawn = 0;
+  let lastFrame = 0;
+  let pointer = { x: 0, y: 0, active: false };
+  let crosshairFlash = 0;
+
+  let dyingTime = 0;
+  let dyingScreamPlayed = false;
+  let dyingSplatPlayed = false;
+  function tower() {
+    return { x: W*0.78, w: Math.max(20, W*0.033), top: H*0.45, bottom: H*0.78 };
+  }
+
+  const JOBS = [
+    { type:'good', label:'Uber Driver',    emoji:'🚗', color:'#00d26a', pts:10, msg:'HIRED!' },
+    { type:'good', label:'Uber Eats',      emoji:'🍔', color:'#06c167', pts:10, msg:'ORDER UP!' },
+    { type:'good', label:'Uber Moto',      emoji:'🛵', color:'#00d26a', pts:12, msg:'VROOM!' },
+    { type:'good', label:'Uber Pet',       emoji:'🐶', color:'#3ec1d5', pts:15, msg:'GOOD BOY!' },
+    { type:'good', label:'Uber Flash',     emoji:'📦', color:'#00d26a', pts:10, msg:'DELIVERED!' },
+    { type:'good', label:'Uber Freight',   emoji:'🚛', color:'#06c167', pts:20, msg:'BIG GIG!' },
+
+    { type:'bad', label:'CEO of Uber',           emoji:'👔', color:'#ff3b30', pts:-25, msg:'YEAH RIGHT' },
+    { type:'bad', label:'Pyramid MLM',           emoji:'💎', color:'#ff3b30', pts:-15, msg:'SCAM!' },
+    { type:'bad', label:'OnlyFans Coach',        emoji:'🔞', color:'#ff3b30', pts:-15, msg:'NOPE!' },
+    { type:'bad', label:'Crypto Bro Trainee',    emoji:'🪙', color:'#ff3b30', pts:-20, msg:'RUG PULL!' },
+    { type:'bad', label:'Unpaid Internship',     emoji:'🪦', color:'#ff3b30', pts:-10, msg:'LMAO NO' },
+    { type:'bad', label:'Influencer (0 followers)',emoji:'📸', color:'#ff3b30', pts:-10, msg:'NICE TRY' },
+    { type:'bad', label:'Herbalife Distributor', emoji:'🥤', color:'#ff3b30', pts:-15, msg:'RUN!' },
+  ];
+
+  const REJECTIONS = [
+    "your CV doesn't match the profile",
+    "we need 10 years of experience",
+    "the position was filled internally",
+    "your English isn't C2 enough",
+    "you need your own car, 2024 or newer",
+  ];
+
+  const ENDQUOTES_GOOD = [
+    "Look at you, working man! Drinks on Felipe tonight.",
+    "Better than being CEO of LATAM Airlines.",
+    "You cracked the system, bro.",
+  ];
+  const ENDQUOTES_MID = [
+    "Pays the rent... barely.",
+    "Not Wall Street, but enough for empanadas.",
+    "Enough for a beer and a Bilz.",
+  ];
+  const ENDQUOTES_BAD = [
+    "Back to mom's basement, champ.",
+    "The unemployment office knows you by name.",
+    "Time to apply at McDonald's, I guess.",
+  ];
+
+  function spawn() {
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const isBad = Math.random() < 0.35;
+    const pool = JOBS.filter(j => isBad ? j.type==='bad' : j.type==='good');
+    const job = pool[Math.floor(Math.random()*pool.length)];
+    const baseSpeed = Math.max(60, W * 0.1);
+    const speed = baseSpeed + Math.random()*120 + (60-timeLeft)*1.5;
+    const yMin = 80;
+    const yMax = Math.max(yMin + 40, H - 240);
+    const y = yMin + Math.random()*(yMax - yMin);
+    const startX = dir > 0 ? -80 : W + 80;
+    entities.push({
+      x: startX, y, vx: speed * dir,
+      vy: (Math.random()-0.5) * 30,
+      job, alive: true, born: performance.now(),
+      bobPhase: Math.random()*Math.PI*2,
+    });
+  }
+
+  function spawnParticles(x, y, color, n=12) {
+    for (let i=0;i<n;i++){
+      particles.push({
+        x, y,
+        vx: (Math.random()-0.5)*300,
+        vy: (Math.random()-0.5)*300 - 60,
+        life: 0.6 + Math.random()*0.4,
+        age: 0, color
+      });
+    }
+  }
+
+  function popup(x, y, text, color) {
+    popups.push({ x, y, text, color, age:0, life:1.2 });
+  }
+
+  function drawFelipe(aimX, aimY) {
+    const scale = Math.max(0.55, Math.min(1, W / 960));
+    const baseY = H - 6;
+    const bodyW = 110 * scale;
+    const bodyH = 80  * scale;
+    const headR = 22  * scale;
+    const armL  = 90  * scale;
+
+    ctx.save();
+    ctx.fillStyle = '#3a2a1a';
+    ctx.fillRect(W/2 - bodyW/2, baseY - bodyH, bodyW, bodyH);
+
+    ctx.fillStyle = '#d9a37c';
+    const shoulderY = baseY - bodyH * 0.75;
+    const dx = aimX - W/2, dy = aimY - shoulderY;
+    const ang = Math.atan2(dy, dx);
+    ctx.save();
+    ctx.translate(W/2, shoulderY);
+    ctx.rotate(ang);
+    ctx.fillRect(0, -8*scale, armL, 16*scale);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(armL - 5*scale, -14*scale, 22*scale, 28*scale);
+    ctx.fillStyle = '#00d26a';
+    ctx.fillRect(armL - 2*scale, -10*scale, 16*scale, 20*scale);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + (10*scale) + 'px monospace';
+    ctx.textAlign='center';
+    ctx.fillText('U', armL + 6*scale, 4*scale);
+    ctx.restore();
+
+    const headY = baseY - bodyH - headR*0.3;
+    ctx.fillStyle = '#d9a37c';
+    ctx.beginPath();
+    ctx.arc(W/2, headY, headR, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath();
+    ctx.arc(W/2, headY - 5*scale, headR, Math.PI, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.fillRect(W/2 - 9*scale, headY - 3*scale, 4*scale, 4*scale);
+    ctx.fillRect(W/2 + 5*scale, headY - 3*scale, 4*scale, 4*scale);
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (score >= 50) {
+      ctx.arc(W/2, headY + 7*scale, 6*scale, 0, Math.PI);
+    } else if (score < 0) {
+      ctx.arc(W/2, headY + 11*scale, 6*scale, Math.PI, Math.PI*2);
+    } else {
+      ctx.moveTo(W/2 - 5*scale, headY + 9*scale);
+      ctx.lineTo(W/2 + 5*scale, headY + 9*scale);
+    }
+    ctx.stroke();
+
+    const fx = W/2 - 50*scale, fy = baseY - bodyH + 10*scale;
+    ctx.fillStyle = '#0039a6'; ctx.fillRect(fx, fy, 14*scale, 9*scale);
+    ctx.fillStyle = '#fff';    ctx.fillRect(fx + 14*scale, fy, 22*scale, 9*scale);
+    ctx.fillStyle = '#d52b1e'; ctx.fillRect(fx, fy + 9*scale, 36*scale, 9*scale);
+
+    ctx.restore();
+  }
+
+  function drawDyingFelipe(x, y, rotation, armsUp) {
+    const s = Math.max(0.7, Math.min(1.2, W / 800));
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    ctx.scale(s, s);
+    ctx.fillStyle = '#3a2a1a';
+    ctx.fillRect(-12, -10, 24, 30);
+    ctx.fillStyle = '#0039a6'; ctx.fillRect(-10, -7, 6, 4);
+    ctx.fillStyle = '#fff';    ctx.fillRect(-4, -7, 10, 4);
+    ctx.fillStyle = '#d52b1e'; ctx.fillRect(-10, -3, 16, 4);
+    ctx.fillStyle = '#d9a37c';
+    ctx.beginPath(); ctx.arc(0, -18, 9, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath(); ctx.arc(0, -20, 9, Math.PI, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-5,-20); ctx.lineTo(-2,-17);
+    ctx.moveTo(-2,-20); ctx.lineTo(-5,-17);
+    ctx.moveTo( 2,-20); ctx.lineTo( 5,-17);
+    ctx.moveTo( 5,-20); ctx.lineTo( 2,-17);
+    ctx.stroke();
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(0, -13, 3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#d9a37c';
+    if (armsUp) { ctx.fillRect(-22, -14, 10, 5); ctx.fillRect( 12, -14, 10, 5); }
+    else        { ctx.fillRect(-20,  -6,  8, 5); ctx.fillRect( 12,  -6,  8, 5); }
+    ctx.fillStyle = '#222';
+    ctx.fillRect(-8, 18, 6, 12);
+    ctx.fillRect( 2, 18, 6, 12);
+    ctx.restore();
+  }
+
+  function drawJob(e, t) {
+    const scale = Math.max(0.7, Math.min(1, W / 960));
+    const bob = Math.sin(t/200 + e.bobPhase) * 4;
+    const x = e.x, y = e.y + bob;
+    const w = 90 * scale, h = 60 * scale;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.sin(t/300 + e.bobPhase) * 0.08);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(-w/2 + 2, -h/2 + 2, w, h);
+    ctx.fillStyle = e.job.type === 'good' ? '#fff' : '#ffe9e9';
+    ctx.fillRect(-w/2, -h/2, w, h);
+    ctx.fillStyle = e.job.color;
+    ctx.fillRect(-w/2, -h/2, w, 14*scale);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + (10*scale) + 'px sans-serif';
+    ctx.textAlign='left';
+    ctx.fillText(e.job.type==='good' ? 'Uber®' : 'NOT Uber', -w/2 + 4, -h/2 + 10*scale);
+    ctx.font = (28*scale) + 'px serif';
+    ctx.textAlign='center';
+    ctx.fillText(e.job.emoji, -22*scale, 14*scale);
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold ' + (10*scale) + 'px monospace';
+    ctx.textAlign='left';
+    ctx.fillText(e.job.label, 0, 0);
+    ctx.font = (8*scale) + 'px monospace';
+    ctx.fillStyle = '#555';
+    ctx.fillText(e.job.type==='good' ? 'Apply now!' : 'OPPORTUNITY!', 0, 12*scale);
+    ctx.fillStyle = e.job.type==='good' ? '#06c167' : '#ff3b30';
+    ctx.fillText(e.job.type==='good' ? '$$$ + tips' : '$1M/day!!', 0, 24*scale);
+    ctx.restore();
+  }
+
+  function drawCrosshair() {
+    if (!pointer.active) return; // touch: only show while finger is down
+    const x = pointer.x, y = pointer.y;
+    ctx.strokeStyle = crosshairFlash > 0 ? '#fff' : '#00d26a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, 22, 0, Math.PI*2);
+    ctx.moveTo(x-30, y); ctx.lineTo(x-10, y);
+    ctx.moveTo(x+10, y); ctx.lineTo(x+30, y);
+    ctx.moveTo(x, y-30); ctx.lineTo(x, y-10);
+    ctx.moveTo(x, y+10); ctx.lineTo(x, y+30);
+    ctx.stroke();
+  }
+
+  function drawHUD() {
+    const barH = Math.max(40, H * 0.07);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, W, barH);
+
+    const fontMain = Math.max(14, Math.min(22, W * 0.045));
+    const fontSm   = Math.max(12, Math.min(18, W * 0.035));
+    const yT = barH * 0.65;
+
+    ctx.fillStyle = '#00d26a';
+    ctx.font = 'bold ' + fontMain + 'px monospace';
+    ctx.textAlign='left';
+    ctx.fillText('SCORE: ' + score, 14, yT);
+
+    ctx.font = 'bold ' + fontSm + 'px monospace';
+    ctx.textAlign='center';
+    ctx.fillStyle = timeLeft < 10 ? '#ff5e62' : '#fff';
+    ctx.fillText('⏱ ' + Math.ceil(timeLeft) + 's', W/2, yT);
+
+    ctx.textAlign='right';
+    ctx.fillStyle = '#ff5e62';
+    let s = '';
+    for (let i=0;i<lives;i++) s += '❤';
+    for (let i=lives;i<3;i++) s += '✖';
+    ctx.font = 'bold ' + fontSm + 'px monospace';
+    ctx.fillText(s, W - 14, yT);
+
+    if (combo >= 2) {
+      ctx.fillStyle = '#ffd700';
+      ctx.font = 'bold ' + (fontSm*0.9) + 'px monospace';
+      ctx.textAlign='center';
+      ctx.fillText('🔥 COMBO x' + combo, W/2, barH + 18);
+    }
+  }
+
+  function drawBackground(t) {
+    ctx.fillStyle = '#1f0d05';
+    ctx.beginPath();
+    ctx.moveTo(0, H*0.7);
+    const peaks = 12;
+    for (let i=0; i<=peaks; i++) {
+      const px = (W/peaks)*i;
+      const py = H*0.7 - (60 + Math.sin(i*1.7)*40 + (i%3)*20);
+      ctx.lineTo(px, py);
+    }
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    for (let i=0; i<=peaks; i++) {
+      const px = (W/peaks)*i;
+      const py = H*0.7 - (60 + Math.sin(i*1.7)*40 + (i%3)*20);
+      ctx.beginPath();
+      ctx.moveTo(px-15, py+18);
+      ctx.lineTo(px, py);
+      ctx.lineTo(px+15, py+18);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.fillStyle = 'rgba(120, 90, 60, 0.35)';
+    ctx.fillRect(0, H*0.55, W, H*0.2);
+
+    const bldCount = Math.max(8, Math.floor(W / 70));
+    const bldW = W / bldCount;
+    for (let i=0; i<bldCount; i++) {
+      const bw = bldW * (0.7 + ((i*7)%4)*0.07);
+      const bh = 60 + ((i*37)%80);
+      const bx = i*bldW;
+      ctx.fillStyle = '#0a0502';
+      ctx.fillRect(bx, H*0.78 - bh, bw, bh);
+      ctx.fillStyle = 'rgba(255,210,100,0.6)';
+      for (let r=0; r<Math.floor(bh/14); r++){
+        for (let c=0; c<Math.floor(bw/12); c++){
+          if ((r*c+i)%3===0)
+            ctx.fillRect(bx+4+c*12, H*0.78 - bh + 6 + r*14, 5, 7);
+        }
+      }
+    }
+
+    const T = tower();
+    ctx.fillStyle = '#000';
+    ctx.fillRect(T.x, T.top, T.w, T.bottom - T.top);
+    ctx.fillStyle = '#ffd700';
+    ctx.fillRect(T.x + T.w*0.3, T.top+4, 4, 4);
+    ctx.fillRect(T.x + T.w*0.6, T.top+12, 4, 4);
+
+    ctx.fillStyle = 'rgba(255,255,200,0.7)';
+    ctx.beginPath();
+    ctx.arc(W*0.85, H*0.25, Math.min(38, W*0.06), 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  function drawDeathScene(now) {
+    const t = dyingTime;
+    drawBackground(now);
+    ctx.fillStyle = 'rgba(0,0,0,' + Math.min(0.35, t*0.1) + ')';
+    ctx.fillRect(0, 0, W, H);
+
+    const T = tower();
+    const startX = T.x + T.w/2;
+    const startY = T.top - 20;
+    const groundY = H - 35;
+
+    if (t < 1.5) {
+      const sway = Math.sin(now/200) * 1.5;
+      drawDyingFelipe(startX + sway, startY, 0, false);
+      const fade = Math.min(1, t/0.4);
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      const bubbleW = Math.min(220, W*0.55);
+      const bubbleH = 50;
+      const bx = Math.max(8, startX - bubbleW + 30);
+      const by = Math.max(8, startY - 90);
+      if (ctx.roundRect) {
+        ctx.beginPath(); ctx.roundRect(bx, by, bubbleW, bubbleH, 12); ctx.fill();
+      } else {
+        ctx.fillRect(bx, by, bubbleW, bubbleH);
+      }
+      ctx.beginPath();
+      ctx.moveTo(startX - 8, by + bubbleH);
+      ctx.lineTo(startX, by + bubbleH + 18);
+      ctx.lineTo(startX + 8, by + bubbleH);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('"I can\'t take it anymore..."', bx + bubbleW/2, by + 22);
+      ctx.font = '10px monospace';
+      ctx.fillStyle = '#666';
+      ctx.fillText('the gig economy won', bx + bubbleW/2, by + 38);
+      ctx.globalAlpha = 1;
+
+    } else if (t < 3.0) {
+      const u = (t - 1.5) / 1.5;
+      const px = startX + (-30) * u;
+      const py = startY + (groundY - startY) * (u*u);
+      const rot = u * Math.PI * 2.2;
+      if (!dyingScreamPlayed) { sndScream(); dyingScreamPlayed = true; }
+      drawDyingFelipe(px, py, rot, true);
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 6; i++) {
+        const lx = px - 40 + i*15;
+        const ly = py - 60 - (i%2)*10;
+        ctx.beginPath();
+        ctx.moveTo(lx, ly);
+        ctx.lineTo(lx + 5, ly + 30);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold ' + Math.max(16, W*0.04) + 'px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('AAAAAAH!!', px + 60, py - 30);
+
+    } else {
+      if (!dyingSplatPlayed) {
+        sndSplat();
+        dyingSplatPlayed = true;
+        for (let i = 0; i < 60; i++) {
+          particles.push({
+            x: startX - 30, y: groundY,
+            vx: (Math.random()-0.5)*500,
+            vy: -Math.random()*300 - 50,
+            life: 0.8 + Math.random()*0.6,
+            age: 0,
+            color: Math.random() < 0.7 ? '#b30000' : '#ff3b30',
+          });
+        }
+      }
+      ctx.fillStyle = '#7a0000';
+      ctx.beginPath();
+      ctx.ellipse(startX - 30, groundY + 5, 90, 14, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = '#b30000';
+      ctx.beginPath();
+      ctx.ellipse(startX - 30, groundY + 3, 70, 10, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = '#3a2a1a';
+      ctx.fillRect(startX - 60, groundY - 6, 60, 8);
+      ctx.fillStyle = '#d9a37c';
+      ctx.beginPath();
+      ctx.arc(startX - 65, groundY - 2, 6, 0, Math.PI*2);
+      ctx.fill();
+
+      if (t > 3.6) {
+        const fade = Math.min(1, (t - 3.6) / 0.6);
+        ctx.fillStyle = 'rgba(0,0,0,' + (fade*0.6) + ')';
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = fade;
+        ctx.fillStyle = '#ff3b30';
+        ctx.font = 'bold ' + Math.max(36, Math.min(64, W*0.09)) + 'px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('GAME OVER', W/2, H/2);
+        ctx.fillStyle = '#fff';
+        ctx.font = Math.max(11, Math.min(18, W*0.028)) + 'px monospace';
+        ctx.fillText('Felipe has joined the great rideshare in the sky', W/2, H/2 + 40);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  function loop(now) {
+    requestAnimationFrame(loop);
+    const dt = Math.min(0.05, (now - lastFrame)/1000 || 0);
+    lastFrame = now;
+
+    if (state === STATE.DYING) {
+      dyingTime += dt;
+      ctx.clearRect(0, 0, W, H);
+      drawDeathScene(now);
+      for (const p of particles) {
+        p.age += dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += 900 * dt;
+      }
+      particles = particles.filter(p => p.age < p.life && p.y < H + 20);
+      for (const p of particles) {
+        const a = 1 - (p.age / p.life);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = a;
+        ctx.fillRect(p.x-3, p.y-3, 6, 6);
+      }
+      ctx.globalAlpha = 1;
+      if (dyingTime > 5.0) {
+        state = STATE.END;
+        endPanel.classList.remove('hidden');
+      }
+      return;
+    }
+
+    if (state !== STATE.PLAY) {
+      ctx.clearRect(0, 0, W, H);
+      drawBackground(now);
+      drawFelipe(W/2, H*0.4);
+      return;
+    }
+
+    timeLeft -= dt;
+    if (timeLeft <= 0) { timeLeft = 0; endGame(false); }
+
+    const spawnInterval = Math.max(450, 1100 - (60 - timeLeft) * 12);
+    if (now - lastSpawn > spawnInterval) {
+      spawn();
+      lastSpawn = now;
+    }
+
+    for (const e of entities) {
+      if (!e.alive) continue;
+      e.x += e.vx * dt;
+      e.y += e.vy * dt;
+      const yMin = 70;
+      const yMax = Math.max(yMin + 40, H - 130);
+      if (e.y < yMin || e.y > yMax) e.vy *= -1;
+      if (e.x < -100 || e.x > W + 100) {
+        if (e.job.type === 'good') {
+          lives--;
+          combo = 0;
+          popup(e.x < 0 ? 60 : W-60, e.y, REJECTIONS[Math.floor(Math.random()*REJECTIONS.length)], '#ff5e62');
+          sndMiss();
+          if (lives <= 0) endGame(true);
+        }
+        e.alive = false;
+      }
+    }
+    entities = entities.filter(e => e.alive);
+
+    for (const p of particles) {
+      p.age += dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 600 * dt;
+    }
+    particles = particles.filter(p => p.age < p.life);
+
+    for (const pop of popups) pop.age += dt;
+    popups = popups.filter(p => p.age < p.life);
+
+    if (crosshairFlash > 0) crosshairFlash -= dt;
+
+    ctx.clearRect(0,0,W,H);
+    drawBackground(now);
+    for (const e of entities) drawJob(e, now);
+
+    for (const p of particles) {
+      const a = 1 - (p.age / p.life);
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = a;
+      ctx.fillRect(p.x-3, p.y-3, 6, 6);
+    }
+    ctx.globalAlpha = 1;
+
+    for (const pop of popups) {
+      const a = 1 - (pop.age / pop.life);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = pop.color;
+      ctx.font = 'bold ' + Math.max(14, Math.min(20, W*0.035)) + 'px monospace';
+      ctx.textAlign='center';
+      ctx.fillText(pop.text, pop.x, pop.y - pop.age*40);
+    }
+    ctx.globalAlpha = 1;
+
+    const aimX = pointer.active ? pointer.x : W/2;
+    const aimY = pointer.active ? pointer.y : H*0.4;
+    drawFelipe(aimX, aimY);
+    drawHUD();
+    drawCrosshair();
+  }
+
+  function clientToCanvas(clientX, clientY) {
+    const r = canvas.getBoundingClientRect();
+    return { x: clientX - r.left, y: clientY - r.top };
+  }
+  function tryHit(p) {
+    const radius = Math.max(60, Math.min(90, W * 0.1));
+    let hit = null, hitDist = 1e9;
+    for (const e of entities) {
+      if (!e.alive) continue;
+      const dx = p.x - e.x, dy = p.y - e.y;
+      const d = Math.hypot(dx, dy);
+      if (d < radius && d < hitDist) { hit = e; hitDist = d; }
+    }
+    return hit;
+  }
+
+  function handleTap(p) {
+    if (state !== STATE.PLAY) return;
+    pointer.x = p.x; pointer.y = p.y; pointer.active = true;
+    crosshairFlash = 0.1;
+    sndShoot();
+
+    const hit = tryHit(p);
+    if (hit) {
+      hit.alive = false;
+      score += hit.job.pts;
+      if (hit.job.type === 'good') {
+        combo++;
+        if (combo > bestCombo) bestCombo = combo;
+        if (combo >= 3) score += Math.min(combo, 10);
+        spawnParticles(hit.x, hit.y, '#00d26a', 16);
+        popup(hit.x, hit.y, hit.job.msg + ' +' + hit.job.pts, '#00d26a');
+        sndHit();
+      } else {
+        combo = 0;
+        lives--;
+        spawnParticles(hit.x, hit.y, '#ff3b30', 20);
+        popup(hit.x, hit.y, hit.job.msg + ' ' + hit.job.pts, '#ff5e62');
+        sndBad();
+        if (lives <= 0) endGame(true);
+      }
+    } else {
+      combo = 0;
+      sndMiss();
+    }
+  }
+
+  // ---- Mouse (laptop preview / desktop browsers) ----
+  canvas.addEventListener('mousedown', (ev) => {
+    unlockAudio();
+    handleTap(clientToCanvas(ev.clientX, ev.clientY));
+  });
+  canvas.addEventListener('mousemove', (ev) => {
+    const p = clientToCanvas(ev.clientX, ev.clientY);
+    pointer.x = p.x; pointer.y = p.y; pointer.active = true;
+  });
+
+  // ---- Touch (iPhone / iPad / Android) ----
+  canvas.addEventListener('touchstart', (ev) => {
+    ev.preventDefault();
+    unlockAudio();
+    if (ev.touches.length === 0) return;
+    const t = ev.touches[0];
+    handleTap(clientToCanvas(t.clientX, t.clientY));
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (ev) => {
+    ev.preventDefault();
+    if (ev.touches.length === 0) return;
+    const t = ev.touches[0];
+    const p = clientToCanvas(t.clientX, t.clientY);
+    pointer.x = p.x; pointer.y = p.y; pointer.active = true;
+  }, { passive: false });
+  canvas.addEventListener('touchend', (ev) => {
+    ev.preventDefault();
+    pointer.active = false;
+  }, { passive: false });
+  canvas.addEventListener('touchcancel', () => { pointer.active = false; }, { passive: true });
+
+  ['gesturestart','gesturechange','gestureend'].forEach(ev =>
+    document.addEventListener(ev, e => e.preventDefault(), { passive: false }));
+  document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+
+  function startGame() {
+    score = 0; lives = 3; timeLeft = 60;
+    combo = 0; bestCombo = 0;
+    entities = []; particles = []; popups = [];
+    lastSpawn = performance.now();
+    state = STATE.PLAY;
+    dyingTime = 0;
+    dyingScreamPlayed = false;
+    dyingSplatPlayed = false;
+    startPanel.classList.add('hidden');
+    endPanel.classList.add('hidden');
+    unlockAudio();
+  }
+
+  function endGame(byDeath) {
+    if (state === STATE.END || state === STATE.DYING) return;
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('finalCombo').textContent = bestCombo;
+
+    let title, msg, pool;
+    if (byDeath) {
+      title = '☠ HE JUMPED OFF THE TOWER ☠';
+      msg = 'Three rejections in a row was too much. Felipe has logged off — permanently.';
+      pool = ENDQUOTES_BAD;
+    } else {
+      title = "TIME'S UP";
+      msg = 'The HR office closed. The portal reopens tomorrow.';
+      if (score >= 120) pool = ENDQUOTES_GOOD;
+      else if (score >= 40) pool = ENDQUOTES_MID;
+      else pool = ENDQUOTES_BAD;
+    }
+    document.getElementById('endTitle').textContent = title;
+    document.getElementById('endMsg').textContent = msg;
+    document.getElementById('endQuote').textContent = '"' + pool[Math.floor(Math.random()*pool.length)] + '"';
+
+    if (byDeath) {
+      state = STATE.DYING;
+      dyingTime = 0;
+      dyingScreamPlayed = false;
+      dyingSplatPlayed = false;
+      particles = [];
+      entities = [];
+    } else {
+      state = STATE.END;
+      endPanel.classList.remove('hidden');
+    }
+  }
+
+  startBtn.addEventListener('click', startGame);
+  startBtn.addEventListener('touchend', (e) => { e.preventDefault(); startGame(); }, { passive: false });
+  restartBtn.addEventListener('click', startGame);
+  restartBtn.addEventListener('touchend', (e) => { e.preventDefault(); startGame(); }, { passive: false });
+
+  window.addEventListener('resize', fit);
+  window.addEventListener('orientationchange', () => setTimeout(fit, 100));
+  fit();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
